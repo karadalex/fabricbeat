@@ -3,12 +3,18 @@ package beater
 import (
 	"fmt"
 	"time"
+	"context"
+	"io"
+	"os"
 
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
 
 	"github.com/karadalex/fabricbeat/config"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
 )
 
 // Fabricbeat configuration.
@@ -51,11 +57,28 @@ func (bt *Fabricbeat) Run(b *beat.Beat) error {
 		case <-ticker.C:
 		}
 
+		// Get logs from Fabric Docker container
+		ctx := context.Background()
+		cli, err := client.NewEnvClient()
+		if err != nil {
+			panic(err)
+		}
+		cli.NegotiateAPIVersion(ctx)
+
+		// Specify containerID from configuration (TODO)
+		options := types.ContainerLogsOptions{ShowStdout: true}
+		out, err := cli.ContainerLogs(ctx, "6a7bd48821d3", options)
+		if err != nil {
+			panic(err)
+		}
+		io.Copy(os.Stdout, out)
+
 		event := beat.Event{
 			Timestamp: time.Now(),
 			Fields: common.MapStr{
 				"type":    b.Info.Name,
 				"counter": counter,
+				"fabric_log": out,
 			},
 		}
 		bt.client.Publish(event)
